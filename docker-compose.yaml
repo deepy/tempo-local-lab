@@ -3,7 +3,7 @@ services:
   # Tempo runs as user 10001, and docker compose creates the volume as root.
   # As such, we need to chown the volume in order for Tempo to start correctly.
   init:
-    image: &tempoImage grafana/tempo:latest
+    image: busybox:latest
     user: root
     entrypoint:
       - "chown"
@@ -12,8 +12,17 @@ services:
     volumes:
       - ./tempo-data:/var/tempo
 
+  memcached:
+    image: memcached:1.6.40@sha256:cf7cf1c8f636c9d9640a0e0b1a574393cb7f187d64915b31b7b3e84bee47f711
+    container_name: memcached
+    ports:
+      - "11211:11211"
+    environment:
+      - MEMCACHED_MAX_MEMORY=64m # Set the maximum memory usage
+      - MEMCACHED_THREADS=4 # Number of threads to use
+
   tempo:
-    image: *tempoImage
+    image: grafana/tempo:main-a6f0757
     command: [ "-config.file=/etc/tempo.yaml" ]
     volumes:
       - ./shared/tempo.yaml:/etc/tempo.yaml
@@ -27,7 +36,7 @@ services:
       - "9411:9411"   # zipkin
     depends_on:
       - init
-
+      - memcached
 
   # While not strictly necessary, adding prometheus won't hurt
   prometheus:
@@ -42,14 +51,15 @@ services:
       - "9090:9090"
 
   grafana:
-    image: grafana/grafana:11.0.0
+    image: grafana/grafana:12.3.1@sha256:2175aaa91c96733d86d31cf270d5310b278654b03f5718c59de12a865380a31f
     volumes:
-      - ./shared/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - ../shared/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_DISABLE_LOGIN_FORM=true
-      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor traceQLStreaming metricsSummary
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor metricsSummary
+      - GF_INSTALL_PLUGINS=https://storage.googleapis.com/integration-artifacts/grafana-exploretraces-app/grafana-exploretraces-app-latest.zip;grafana-traces-app
     ports:
       - "3000:3000"
 
